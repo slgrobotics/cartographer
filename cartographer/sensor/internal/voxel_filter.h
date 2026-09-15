@@ -35,7 +35,7 @@ TimedPointCloud VoxelFilter(const TimedPointCloud& timed_point_cloud,
 std::vector<sensor::TimedPointCloudOriginData::RangeMeasurement> VoxelFilter(
     const std::vector<sensor::TimedPointCloudOriginData::RangeMeasurement>&
         range_measurements,
-    const float resolution);
+    const float resolution, int num_threads = 1);
 
 proto::AdaptiveVoxelFilterOptions CreateAdaptiveVoxelFilterOptions(
     common::LuaParameterDictionary* const parameter_dictionary);

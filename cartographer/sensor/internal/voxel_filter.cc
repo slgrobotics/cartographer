@@ -17,6 +17,7 @@
 #include "cartographer/sensor/internal/voxel_filter.h"
 
 #include <cmath>
+#include <algorithm>
 #include <random>
 #include <utility>
 
@@ -88,14 +89,25 @@ VoxelKeyType GetVoxelCellIndex(const Eigen::Vector3f& point,
 template <class T, class PointFunction>
 std::vector<bool> RandomizedVoxelFilterIndices(
     const std::vector<T>& point_cloud, const float resolution,
-    PointFunction&& point_function) {
+    PointFunction&& point_function, int num_threads = 1) {
   // According to https://en.wikipedia.org/wiki/Reservoir_sampling
   std::minstd_rand0 generator;
   absl::flat_hash_map<VoxelKeyType, std::pair<int, int>>
       voxel_count_and_point_index;
+  // Only the independent coordinate calculations run concurrently. Keep hash
+  // updates, RNG calls and selected-point ordering identical to serial SLAM.
+  std::vector<VoxelKeyType> keys;
+  if (num_threads > 1 && point_cloud.size() > 4096) {
+    keys.resize(point_cloud.size());
+#pragma omp parallel for num_threads(num_threads) schedule(static)
+    for (size_t i = 0; i < point_cloud.size(); ++i) {
+      keys[i] = GetVoxelCellIndex(point_function(point_cloud[i]), resolution);
+    }
+  }
   for (size_t i = 0; i < point_cloud.size(); i++) {
-    auto& voxel = voxel_count_and_point_index[GetVoxelCellIndex(
-        point_function(point_cloud[i]), resolution)];
+    const auto key = keys.empty()
+        ? GetVoxelCellIndex(point_function(point_cloud[i]), resolution) : keys[i];
+    auto& voxel = voxel_count_and_point_index[key];
     voxel.first++;
     if (voxel.first == 1) {
       voxel.second = i;
@@ -116,9 +128,9 @@ std::vector<bool> RandomizedVoxelFilterIndices(
 template <class T, class PointFunction>
 std::vector<T> RandomizedVoxelFilter(const std::vector<T>& point_cloud,
                                      const float resolution,
-                                     PointFunction&& point_function) {
+                                     PointFunction&& point_function, int num_threads = 1) {
   const std::vector<bool> points_used =
-      RandomizedVoxelFilterIndices(point_cloud, resolution, point_function);
+      RandomizedVoxelFilterIndices(point_cloud, resolution, point_function, num_threads);
 
   std::vector<T> results;
   for (size_t i = 0; i < point_cloud.size(); i++) {
@@ -170,13 +182,13 @@ TimedPointCloud VoxelFilter(const TimedPointCloud& timed_point_cloud,
 std::vector<sensor::TimedPointCloudOriginData::RangeMeasurement> VoxelFilter(
     const std::vector<sensor::TimedPointCloudOriginData::RangeMeasurement>&
         range_measurements,
-    const float resolution) {
+    const float resolution, int num_threads) {
   return RandomizedVoxelFilter(
       range_measurements, resolution,
       [](const sensor::TimedPointCloudOriginData::RangeMeasurement&
              range_measurement) {
         return range_measurement.point_time.position;
-      });
+      }, num_threads);
 }
 
 proto::AdaptiveVoxelFilterOptions CreateAdaptiveVoxelFilterOptions(

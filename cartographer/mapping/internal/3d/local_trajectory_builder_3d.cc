@@ -17,6 +17,7 @@
 #include "cartographer/mapping/internal/3d/local_trajectory_builder_3d.h"
 
 #include <memory>
+#include "cartographer/metrics/scoped_timer.h"
 
 #include "absl/memory/memory.h"
 #include "cartographer/common/time.h"
@@ -45,11 +46,25 @@ static auto* kCeresScanMatcherCostMetric = metrics::Histogram::Null();
 static auto* kScanMatcherResidualDistanceMetric = metrics::Histogram::Null();
 static auto* kScanMatcherResidualAngleMetric = metrics::Histogram::Null();
 
+static auto* kRangeCallbackSeconds = metrics::Histogram::Null();
+static auto* kCollationSeconds = metrics::Histogram::Null();
+static auto* kInitialVoxelSeconds = metrics::Histogram::Null();
+static auto* kExtrapolationSeconds = metrics::Histogram::Null();
+static auto* kDeskewSeconds = metrics::Histogram::Null();
+static auto* kFinalVoxelSeconds = metrics::Histogram::Null();
+static auto* kHighAdaptiveSeconds = metrics::Histogram::Null();
+static auto* kLowAdaptiveSeconds = metrics::Histogram::Null();
+static auto* kScanMatchSeconds = metrics::Histogram::Null();
+static auto* kInsertionSeconds = metrics::Histogram::Null();
+static auto* kCeresResidualSeconds = metrics::Histogram::Null();
+static auto* kCeresJacobianSeconds = metrics::Histogram::Null();
+static auto* kCeresSolveSeconds = metrics::Histogram::Null();
+
 LocalTrajectoryBuilder3D::LocalTrajectoryBuilder3D(
     const mapping::proto::LocalTrajectoryBuilderOptions3D& options,
     const std::vector<std::string>& expected_range_sensor_ids)
     : options_(options),
-      active_submaps_(options.submaps_options()),
+      active_submaps_(options.submaps_options(), options.num_processing_threads()),
       motion_filter_(options.motion_filter_options()),
       real_time_correlative_scan_matcher_(
           absl::make_unique<scan_matching::RealTimeCorrelativeScanMatcher3D>(
@@ -95,6 +110,9 @@ std::unique_ptr<transform::Rigid3d> LocalTrajectoryBuilder3D::ScanMatch(
                             &matching_submap->low_resolution_hybrid_grid(),
                             /*intensity_hybrid_grid=*/nullptr}},
       &pose_observation_in_submap, &summary);
+  kCeresResidualSeconds->Observe(summary.residual_evaluation_time_in_seconds);
+  kCeresJacobianSeconds->Observe(summary.jacobian_evaluation_time_in_seconds);
+  kCeresSolveSeconds->Observe(summary.linear_solver_time_in_seconds);
   kCeresScanMatcherCostMetric->Observe(summary.final_cost);
   const double residual_distance = (pose_observation_in_submap.translation() -
                                     initial_ceres_pose.translation())
@@ -130,14 +148,17 @@ std::unique_ptr<LocalTrajectoryBuilder3D::MatchingResult>
 LocalTrajectoryBuilder3D::AddRangeData(
     const std::string& sensor_id,
     const sensor::TimedPointCloudData& unsynchronized_data) {
+  metrics::ScopedTimer callback_timer(kRangeCallbackSeconds);
   if (options_.use_intensities()) {
     CHECK_EQ(unsynchronized_data.ranges.size(),
              unsynchronized_data.intensities.size())
         << "Passed point cloud has inconsistent number of intensities and "
            "ranges.";
   }
-  auto synchronized_data =
-      range_data_collator_.AddRangeData(sensor_id, unsynchronized_data);
+  auto synchronized_data = [&] {
+    metrics::ScopedTimer timer(kCollationSeconds);
+    return range_data_collator_.AddRangeData(sensor_id, unsynchronized_data);
+  }();
   if (synchronized_data.ranges.empty()) {
     LOG(INFO) << "Range data collator filling buffer.";
     return nullptr;
@@ -164,19 +185,34 @@ LocalTrajectoryBuilder3D::AddRangeData(
     accumulated_point_cloud_origin_data_.clear();
   }
 
-  synchronized_data.ranges = sensor::VoxelFilter(
-      synchronized_data.ranges, 0.5f * options_.voxel_filter_size());
+  {
+    metrics::ScopedTimer timer(kInitialVoxelSeconds);
+    synchronized_data.ranges = sensor::VoxelFilter(
+        synchronized_data.ranges, 0.5f * options_.voxel_filter_size(),
+        options_.num_processing_threads());
+  }
   accumulated_point_cloud_origin_data_.emplace_back(
       std::move(synchronized_data));
   ++num_accumulated_;
 
-  if (num_accumulated_ < options_.num_accumulated_range_data()) {
+  // Several LiDARs can leave nonempty fragments only microseconds apart.
+  // Keep those points and their sensor origins for the next supported match.
+  if (num_accumulated_ < options_.num_accumulated_range_data() ||
+      (last_sensor_time_.has_value() &&
+       common::ToSeconds(accumulated_point_cloud_origin_data_.back().time -
+                         last_sensor_time_.value()) <
+           options_.min_range_data_interval_seconds())) {
     return nullptr;
   }
   num_accumulated_ = 0;
 
   bool warned = false;
   std::vector<common::Time> hit_times;
+  size_t hit_count = 1;
+  for (const auto& cloud : accumulated_point_cloud_origin_data_) {
+    hit_count += cloud.ranges.size();
+  }
+  hit_times.reserve(hit_count);
   common::Time prev_time_point = extrapolator_->GetLastExtrapolatedTime();
   for (const auto& point_cloud_origin_data :
        accumulated_point_cloud_origin_data_) {
@@ -199,8 +235,10 @@ LocalTrajectoryBuilder3D::AddRangeData(
   }
   hit_times.push_back(accumulated_point_cloud_origin_data_.back().time);
 
-  const PoseExtrapolatorInterface::ExtrapolationResult extrapolation_result =
-      extrapolator_->ExtrapolatePosesWithGravity(hit_times);
+  auto extrapolation_result = [&] {
+    metrics::ScopedTimer timer(kExtrapolationSeconds);
+    return extrapolator_->ExtrapolatePosesWithGravity(hit_times);
+  }();
   std::vector<transform::Rigid3f> hits_poses(
       std::move(extrapolation_result.previous_poses));
   hits_poses.push_back(extrapolation_result.current_pose.cast<float>());
@@ -216,6 +254,8 @@ LocalTrajectoryBuilder3D::AddRangeData(
   sensor::PointCloud misses;
   std::vector<transform::Rigid3f>::const_iterator hits_poses_it =
       hits_poses.begin();
+  {
+  metrics::ScopedTimer timer(kDeskewSeconds);
   for (const auto& point_cloud_origin_data :
        accumulated_point_cloud_origin_data_) {
     for (const auto& hit : point_cloud_origin_data.ranges) {
@@ -244,6 +284,7 @@ LocalTrajectoryBuilder3D::AddRangeData(
       ++hits_poses_it;
     }
   }
+  }
   CHECK(std::next(hits_poses_it) == hits_poses.end());
   const sensor::PointCloud returns(std::move(accumulated_points),
                                    std::move(accumulated_intensities));
@@ -263,6 +304,7 @@ LocalTrajectoryBuilder3D::AddRangeData(
       sensor::VoxelFilter(misses, options_.voxel_filter_size())};
   const auto voxel_filter_stop = std::chrono::steady_clock::now();
   const auto voxel_filter_duration = voxel_filter_stop - voxel_filter_start;
+  kFinalVoxelSeconds->Observe(common::ToSeconds(voxel_filter_duration));
 
   if (sensor_duration.has_value()) {
     const double voxel_filter_fraction =
@@ -294,26 +336,29 @@ LocalTrajectoryBuilder3D::AddAccumulatedRangeData(
 
   const auto scan_matcher_start = std::chrono::steady_clock::now();
 
-  const sensor::PointCloud high_resolution_point_cloud_in_tracking =
-      sensor::AdaptiveVoxelFilter(
-          filtered_range_data_in_tracking.returns,
-          options_.high_resolution_adaptive_voxel_filter_options());
-  if (high_resolution_point_cloud_in_tracking.empty()) {
-    LOG(WARNING) << "Dropped empty high resolution point cloud data.";
-    return nullptr;
+  sensor::PointCloud filtered[2];
+  const int threads = options_.num_processing_threads() > 1 ? 2 : 1;
+  // Each filter owns its RNG/hash map; point order within each call is unchanged.
+#pragma omp parallel for num_threads(threads) if(threads > 1) schedule(static)
+  for (int i = 0; i < 2; ++i) {
+    metrics::ScopedTimer timer(i == 0 ? kHighAdaptiveSeconds : kLowAdaptiveSeconds);
+    filtered[i] = sensor::AdaptiveVoxelFilter(
+        filtered_range_data_in_tracking.returns,
+        i == 0 ? options_.high_resolution_adaptive_voxel_filter_options()
+               : options_.low_resolution_adaptive_voxel_filter_options());
   }
-  const sensor::PointCloud low_resolution_point_cloud_in_tracking =
-      sensor::AdaptiveVoxelFilter(
-          filtered_range_data_in_tracking.returns,
-          options_.low_resolution_adaptive_voxel_filter_options());
-  if (low_resolution_point_cloud_in_tracking.empty()) {
-    LOG(WARNING) << "Dropped empty low resolution point cloud data.";
+  const auto& high_resolution_point_cloud_in_tracking = filtered[0];
+  const auto& low_resolution_point_cloud_in_tracking = filtered[1];
+  if (filtered[0].empty() || filtered[1].empty()) {
+    LOG(WARNING) << "Dropped empty adaptive point cloud data.";
     return nullptr;
   }
 
-  std::unique_ptr<transform::Rigid3d> pose_estimate =
-      ScanMatch(pose_prediction, low_resolution_point_cloud_in_tracking,
-                high_resolution_point_cloud_in_tracking);
+  auto pose_estimate = [&] {
+    metrics::ScopedTimer timer(kScanMatchSeconds);
+    return ScanMatch(pose_prediction, low_resolution_point_cloud_in_tracking,
+                     high_resolution_point_cloud_in_tracking);
+  }();
   if (pose_estimate == nullptr) {
     LOG(WARNING) << "Scan matching failed.";
     return nullptr;
@@ -342,6 +387,7 @@ LocalTrajectoryBuilder3D::AddAccumulatedRangeData(
 
   const auto insert_into_submap_duration =
       insert_into_submap_stop - insert_into_submap_start;
+  kInsertionSeconds->Observe(common::ToSeconds(insert_into_submap_duration));
   if (sensor_duration.has_value()) {
     const double insert_into_submap_fraction =
         common::ToSeconds(insert_into_submap_duration) /
@@ -424,6 +470,22 @@ LocalTrajectoryBuilder3D::InsertIntoSubmap(
 
 void LocalTrajectoryBuilder3D::RegisterMetrics(
     metrics::FamilyFactory* family_factory) {
+  auto* stages = family_factory->NewHistogramFamily(
+      "mapping_3d_local_stage_seconds", "Wall seconds per stage invocation; nested stages overlap.",
+      metrics::Histogram::ScaledPowersOf(1.2, 0.00001, 10.));
+  kRangeCallbackSeconds = stages->Add({{"stage", "RangeCallback"}});
+  kCollationSeconds = stages->Add({{"stage", "Collation"}});
+  kInitialVoxelSeconds = stages->Add({{"stage", "InitialVoxel"}});
+  kExtrapolationSeconds = stages->Add({{"stage", "Extrapolation"}});
+  kDeskewSeconds = stages->Add({{"stage", "Deskew"}});
+  kFinalVoxelSeconds = stages->Add({{"stage", "FinalVoxel"}});
+  kHighAdaptiveSeconds = stages->Add({{"stage", "HighAdaptive"}});
+  kLowAdaptiveSeconds = stages->Add({{"stage", "LowAdaptive"}});
+  kScanMatchSeconds = stages->Add({{"stage", "ScanMatch"}});
+  kInsertionSeconds = stages->Add({{"stage", "Insertion"}});
+  kCeresResidualSeconds = stages->Add({{"stage", "CeresResidual"}});
+  kCeresJacobianSeconds = stages->Add({{"stage", "CeresJacobian"}});
+  kCeresSolveSeconds = stages->Add({{"stage", "CeresSolve"}});
   auto* latency = family_factory->NewGaugeFamily(
       "mapping_3d_local_trajectory_builder_latency",
       "Duration from first incoming point cloud in accumulation to local slam "

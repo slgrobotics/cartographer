@@ -103,7 +103,8 @@ class Submap3D : public Submap {
 // "new" submap gets created. The "old" submap is forgotten by this object.
 class ActiveSubmaps3D {
  public:
-  explicit ActiveSubmaps3D(const proto::SubmapsOptions3D& options);
+  explicit ActiveSubmaps3D(const proto::SubmapsOptions3D& options,
+                          int num_processing_threads = 1);
 
   ActiveSubmaps3D(const ActiveSubmaps3D&) = delete;
   ActiveSubmaps3D& operator=(const ActiveSubmaps3D&) = delete;
@@ -125,6 +126,7 @@ class ActiveSubmaps3D {
                  int rotational_scan_matcher_histogram_size);
 
   const proto::SubmapsOptions3D options_;
+  const int num_processing_threads_;
   std::vector<std::shared_ptr<Submap3D>> submaps_;
   RangeDataInserter3D range_data_inserter_;
 };

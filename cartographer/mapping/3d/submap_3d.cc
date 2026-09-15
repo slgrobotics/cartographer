@@ -298,8 +298,10 @@ void Submap3D::Finish() {
   set_insertion_finished(true);
 }
 
-ActiveSubmaps3D::ActiveSubmaps3D(const proto::SubmapsOptions3D& options)
+ActiveSubmaps3D::ActiveSubmaps3D(const proto::SubmapsOptions3D& options,
+                              int num_processing_threads)
     : options_(options),
+      num_processing_threads_(std::max(1, std::min(2, num_processing_threads))),
       range_data_inserter_(options.range_data_inserter_options()) {}
 
 std::vector<std::shared_ptr<const Submap3D>> ActiveSubmaps3D::submaps() const {
@@ -317,8 +319,11 @@ std::vector<std::shared_ptr<const Submap3D>> ActiveSubmaps3D::InsertData(
                                  local_from_gravity_aligned),
               rotational_scan_matcher_histogram_in_gravity.size());
   }
-  for (auto& submap : submaps_) {
-    submap->InsertData(range_data, range_data_inserter_,
+  // Separate grids and metadata per submap; the inserter only reads const
+  // options/lookup tables. The implicit barrier precedes Finish and publication.
+#pragma omp parallel for num_threads(num_processing_threads_) if(num_processing_threads_ > 1 && submaps_.size() > 1) schedule(static)
+  for (int i = 0; i < static_cast<int>(submaps_.size()); ++i) {
+    submaps_[i]->InsertData(range_data, range_data_inserter_,
                        options_.high_resolution_max_range(),
                        local_from_gravity_aligned,
                        rotational_scan_matcher_histogram_in_gravity);

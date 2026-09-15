@@ -330,6 +330,12 @@ void OptimizationProblem3D::Solve(
 #endif
       problem.SetParameterBlockConstant(
           C_submaps.at(submap_id_data.id).translation());
+      if (options_.fix_initial_submap_rotation_in_3d()) {
+        // Keep the initial map orientation while retaining full 3D motion and
+        // IMU constraints for the remaining submaps and nodes.
+        problem.SetParameterBlockConstant(
+            C_submaps.at(submap_id_data.id).rotation());
+      }
     } else {
 #if CERES_VERSION_MAJOR > 2 || CERES_VERSION_MAJOR == 2 && CERES_VERSION_MINOR >= 1
       C_submaps.Insert(
@@ -490,8 +496,11 @@ void OptimizationProblem3D::Solve(
             trajectory_data.imu_calibration.data());
       }
 
-      // Force gravity constant to be positive.
-      problem.SetParameterLowerBound(&trajectory_data.gravity_constant, 0, 0.0);
+      // Short trajectories may have no acceleration residual (three consecutive
+      // nodes are required), so gravity may not be a parameter in this solve.
+      if (problem.HasParameterBlock(&trajectory_data.gravity_constant)) {
+        problem.SetParameterLowerBound(&trajectory_data.gravity_constant, 0, 0.0);
+      }
     }
   }
 

@@ -17,6 +17,7 @@
 #include "cartographer/mapping/internal/optimization/optimization_problem_3d.h"
 
 #include <random>
+#include <string>
 
 #include "Eigen/Core"
 #include "cartographer/common/internal/testing/lua_parameter_dictionary_test_helpers.h"
@@ -36,9 +37,10 @@ class OptimizationProblem3DTest : public ::testing::Test {
   OptimizationProblem3DTest()
       : optimization_problem_(CreateOptions()), rng_(45387) {}
 
-  optimization::proto::OptimizationProblemOptions CreateOptions() {
-    auto parameter_dictionary = common::MakeDictionary(R"text(
-        return {
+  optimization::proto::OptimizationProblemOptions CreateOptions(
+      const std::string& extra_options = "") {
+    auto parameter_dictionary = common::MakeDictionary(
+        "return {" + extra_options + R"text(
           acceleration_weight = 2e-5,
           rotation_weight = 1e-3,
           huber_scale = 1.,
@@ -106,6 +108,26 @@ transform::Rigid3d AddNoise(const transform::Rigid3d& transform,
                                           transform.rotation());
   return transform::Rigid3d(transform.translation() + noise.translation(),
                             noisy_rotation);
+}
+
+TEST_F(OptimizationProblem3DTest, ShortTrajectoryWithoutAccelerationResidual) {
+  for (const int count : {1, 2}) {
+    OptimizationProblem3D problem(CreateOptions());
+    const auto pose = transform::Rigid3d::Identity();
+    problem.AddSubmap(0, pose);
+    std::vector<OptimizationProblem3D::Constraint> constraints;
+    for (int i = 0; i < count; ++i) {
+      const auto time = common::FromUniversal(0) + common::FromSeconds(i * 0.1);
+      problem.AddImuData(0, sensor::ImuData{
+          time, Eigen::Vector3d::UnitZ() * 9.81, Eigen::Vector3d::Zero()});
+      problem.AddTrajectoryNode(0, NodeSpec3D{time, pose, pose});
+      constraints.push_back(OptimizationProblem3D::Constraint{
+          SubmapId{0, 0}, NodeId{0, i},
+          OptimizationProblem3D::Constraint::Pose{pose, 1., 1.}});
+    }
+    problem.Solve(constraints, {{0, PoseGraphInterface::TrajectoryState::FINISHED}}, {});
+    EXPECT_LT(problem.node_data().at(NodeId{0, 0}).global_pose.translation().norm(), 1e-6);
+  }
 }
 
 TEST_F(OptimizationProblem3DTest, ReducesNoise) {
@@ -195,6 +217,62 @@ TEST_F(OptimizationProblem3DTest, ReducesNoise) {
   EXPECT_GT(0.8 * translation_error_before, translation_error_after);
   EXPECT_GT(0.8 * rotation_error_before, rotation_error_after);
 }
+
+TEST_F(OptimizationProblem3DTest, InitialSubmapRotationAnchorRetains3DMotion) {
+  EXPECT_FALSE(CreateOptions().fix_initial_submap_rotation_in_3d());
+  for (const bool anchored : {false, true}) {
+    auto options = CreateOptions(anchored
+        ? "fix_initial_submap_rotation_in_3d = true,"
+        : "fix_initial_submap_rotation_in_3d = false,");
+    ASSERT_EQ(options.fix_initial_submap_rotation_in_3d(), anchored);
+    options.set_acceleration_weight(110.);
+    options.set_rotation_weight(16000.);
+    options.set_use_online_imu_extrinsics_in_3d(false);
+    options.set_log_solver_summary(false);
+    options.mutable_ceres_solver_options()->set_num_threads(1);
+    OptimizationProblem3D problem(options);
+    problem.AddSubmap(0, transform::Rigid3d::Identity());
+    const auto start = common::FromUniversal(0);
+    const Eigen::Vector3d acceleration =
+        Eigen::AngleAxisd(.05, Eigen::Vector3d::UnitY()) *
+        (9.81 * Eigen::Vector3d::UnitZ());
+    for (int i = 0; i <= 400; ++i) {
+      problem.AddImuData(0, sensor::ImuData{
+          start + common::FromSeconds(.01 * i), acceleration,
+          Eigen::Vector3d::Zero()});
+    }
+    std::vector<OptimizationProblem3D::Constraint> constraints;
+    for (int i = 0; i < 5; ++i) {
+      const transform::Rigid3d scan_pose(
+          Eigen::Vector3d(0., 0., .05 * i), Eigen::Quaterniond::Identity());
+      // Nodes start flat and misoriented: the solve must still change Z and
+      // pitch to recover the scan-constrained vertical motion.
+      const transform::Rigid3d initial_pose(
+          Eigen::Vector3d::Zero(),
+          Eigen::Quaterniond(Eigen::AngleAxisd(.08, Eigen::Vector3d::UnitY())));
+      problem.AddTrajectoryNode(0, NodeSpec3D{
+          start + common::FromSeconds(i), scan_pose, initial_pose});
+      constraints.push_back(OptimizationProblem3D::Constraint{
+          SubmapId{0, 0}, NodeId{0, i},
+          OptimizationProblem3D::Constraint::Pose{scan_pose, 500., 1600.}});
+    }
+    for (int solve = 0; solve < 2; ++solve) {
+      problem.Solve(constraints,
+                    {{0, PoseGraphInterface::TrajectoryState::ACTIVE}}, {});
+      const auto& first = problem.submap_data().at(SubmapId{0, 0}).global_pose;
+      const auto& last = problem.node_data().at(NodeId{0, 4}).global_pose;
+      if (anchored) {
+        EXPECT_LT(transform::GetAngle(first), 1e-12);
+        EXPECT_GT(last.translation().z(), .19);
+        EXPECT_LT(transform::GetAngle(last), .01);
+      } else {
+        // Without the opt-in anchor, gravity alignment keeps its old behavior.
+        EXPECT_NEAR(transform::GetAngle(first), .05, 1e-5);
+      }
+    }
+  }
+}
+
 
 }  // namespace
 }  // namespace optimization

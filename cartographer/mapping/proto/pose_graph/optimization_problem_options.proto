@@ -18,7 +18,7 @@ package cartographer.mapping.optimization.proto;
 
 import "cartographer/common/proto/ceres_solver_options.proto";
 
-// NEXT ID: 26
+// NEXT ID: 27
 message OptimizationProblemOptions {
   reserved 20 to 22; // For visual constraints.
   // Scaling parameter for Huber loss function.
@@ -62,6 +62,10 @@ message OptimizationProblemOptions {
 
   // 3D only: fix Z.
   bool fix_z_in_3d = 13;
+
+  // 3D only: retain the first submap's initial rotation instead of refining
+  // its gravity alignment. Other poses and IMU constraints remain unchanged.
+  bool fix_initial_submap_rotation_in_3d = 26;
 
   // 3D only: activate online IMU extrinsics.
   bool use_online_imu_extrinsics_in_3d = 18;

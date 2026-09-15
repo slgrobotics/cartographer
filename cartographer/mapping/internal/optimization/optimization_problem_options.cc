@@ -53,6 +53,10 @@ proto::OptimizationProblemOptions CreateOptimizationProblemOptions(
   options.set_use_online_imu_extrinsics_in_3d(
       parameter_dictionary->GetBool("use_online_imu_extrinsics_in_3d"));
   options.set_fix_z_in_3d(parameter_dictionary->GetBool("fix_z_in_3d"));
+  if (parameter_dictionary->HasKey("fix_initial_submap_rotation_in_3d")) {
+    options.set_fix_initial_submap_rotation_in_3d(
+        parameter_dictionary->GetBool("fix_initial_submap_rotation_in_3d"));
+  }
   *options.mutable_ceres_solver_options() =
       common::CreateCeresSolverOptionsProto(
           parameter_dictionary->GetDictionary("ceres_solver_options").get());

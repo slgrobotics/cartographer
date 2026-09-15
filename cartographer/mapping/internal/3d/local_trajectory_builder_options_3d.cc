@@ -16,6 +16,8 @@
 
 #include "cartographer/mapping/internal/3d/local_trajectory_builder_options_3d.h"
 
+#include <cmath>
+
 #include "cartographer/mapping/3d/submap_3d.h"
 #include "cartographer/mapping/internal/3d/scan_matching/ceres_scan_matcher_3d.h"
 #include "cartographer/mapping/internal/motion_filter.h"
@@ -30,10 +32,23 @@ namespace mapping {
 proto::LocalTrajectoryBuilderOptions3D CreateLocalTrajectoryBuilderOptions3D(
     common::LuaParameterDictionary* parameter_dictionary) {
   proto::LocalTrajectoryBuilderOptions3D options;
+  const int threads = parameter_dictionary->HasKey("num_processing_threads")
+                          ? parameter_dictionary->GetInt("num_processing_threads")
+                          : 1;
+  CHECK_GE(threads, 1);
+  CHECK_LE(threads, 16);
+  options.set_num_processing_threads(threads);
   options.set_min_range(parameter_dictionary->GetDouble("min_range"));
   options.set_max_range(parameter_dictionary->GetDouble("max_range"));
   options.set_num_accumulated_range_data(
       parameter_dictionary->GetInt("num_accumulated_range_data"));
+  const double interval =
+      parameter_dictionary->HasKey("min_range_data_interval_seconds")
+          ? parameter_dictionary->GetDouble("min_range_data_interval_seconds")
+          : 0.;
+  CHECK(std::isfinite(interval));
+  CHECK_GE(interval, 0.);
+  options.set_min_range_data_interval_seconds(interval);
   options.set_voxel_filter_size(
       parameter_dictionary->GetDouble("voxel_filter_size"));
   *options.mutable_high_resolution_adaptive_voxel_filter_options() =

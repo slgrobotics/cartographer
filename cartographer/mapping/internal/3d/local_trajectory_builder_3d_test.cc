@@ -304,6 +304,44 @@ TEST_F(LocalTrajectoryBuilderTest, MoveInsideCubeUsingOnlyCeresScanMatcher) {
   VerifyAccuracy(GenerateCorkscrewTrajectory(), 1e-1);
 }
 
+TEST_F(LocalTrajectoryBuilderTest, MinimumIntervalRetainsBoundaryFragments) {
+  auto options = CreateTrajectoryBuilderOptions3D();
+  EXPECT_EQ(options.min_range_data_interval_seconds(), 0.);
+  options.set_min_range_data_interval_seconds(0.05);
+  const std::vector<std::string> ids = {"a", "b", "c", "d"};
+  local_trajectory_builder_.reset(new LocalTrajectoryBuilder3D(options, ids));
+  const auto beginning = common::FromUniversal(12345678);
+  const auto pose = transform::Rigid3d::Identity();
+  int matches = 0;
+  common::Time previous = beginning;
+  for (int scan = 0; scan < 5; ++scan) {
+    for (int sensor = 0; sensor < 4; ++sensor) {
+      const auto time = beginning + common::FromSeconds(scan * 0.1 + sensor * 0.0001);
+      AddLinearOnlyImuObservation(time, pose);
+      auto cloud = GeneratePointCloudData(pose, time);
+      // Each boundary fragment carries a unique isolated return. It must
+      // survive until the next match, rather than being discarded by gating.
+      cloud.ranges.push_back({Eigen::Vector3f(1.f + sensor, 2.25f, 3.25f), 0.f});
+      const auto result = local_trajectory_builder_->AddRangeData(ids[sensor], cloud);
+      if (!result) continue;
+      if (matches > 0) {
+        EXPECT_NEAR(common::ToSeconds(result->time - previous), 0.1, 1e-6);
+        for (int marker = 1; marker < 4; ++marker) {
+          float closest = 100.f;
+          const Eigen::Vector3f expected(1.f + marker, 2.25f, 3.25f);
+          for (const auto& point : result->range_data_in_local.returns) {
+            closest = std::min(closest, (point.position - expected).norm());
+          }
+          EXPECT_LT(closest, 0.2f);
+        }
+      }
+      previous = result->time;
+      ++matches;
+    }
+  }
+  EXPECT_EQ(matches, 5);
+}
+
 }  // namespace
 }  // namespace mapping
 }  // namespace cartographer

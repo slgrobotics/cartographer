@@ -25,7 +25,7 @@ import "cartographer/sensor/proto/adaptive_voxel_filter_options.proto";
 import "cartographer/sensor/proto/sensor.proto";
 import "cartographer/transform/proto/timestamped_transform.proto";
 
-// NEXT ID: 22
+// NEXT ID: 24
 message LocalTrajectoryBuilderOptions3D {
   // Rangefinder points outside these ranges will be dropped.
   float min_range = 1;
@@ -76,4 +76,13 @@ message LocalTrajectoryBuilderOptions3D {
 
   // Whether to use Lidar intensities in Ceres Scan Matcher.
   bool use_intensities = 21;
+
+  // Independent voxel-coordinate calculations (up to 16), adaptive filters and
+  // active-submap insertions (each capped at two jobs). 0/1 is serial.
+  int32 num_processing_threads = 22;
+
+  // Minimum acquisition-time interval between accumulated scan matches.
+  // Collated boundary fragments are retained until this interval has elapsed.
+  // Zero preserves count-only accumulation.
+  double min_range_data_interval_seconds = 23;
 }
