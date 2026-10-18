@@ -23,6 +23,7 @@
 #include <thread>
 #include <vector>
 
+#include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/synchronization/mutex.h"
 #include "cartographer/common/task.h"
@@ -65,19 +66,19 @@ class ThreadPool : public ThreadPoolInterface {
   // When the returned weak pointer is expired, 'task' has certainly completed,
   // so dependants no longer need to add it as a dependency.
   std::weak_ptr<Task> Schedule(std::unique_ptr<Task> task)
-      LOCKS_EXCLUDED(mutex_) override;
+      ABSL_LOCKS_EXCLUDED(mutex_) override;
 
  private:
   void DoWork();
 
-  void NotifyDependenciesCompleted(Task* task) LOCKS_EXCLUDED(mutex_) override;
+  void NotifyDependenciesCompleted(Task* task) ABSL_LOCKS_EXCLUDED(mutex_) override;
 
   absl::Mutex mutex_;
-  bool running_ GUARDED_BY(mutex_) = true;
-  std::vector<std::thread> pool_ GUARDED_BY(mutex_);
-  std::deque<std::shared_ptr<Task>> task_queue_ GUARDED_BY(mutex_);
+  bool running_ ABSL_GUARDED_BY(mutex_) = true;
+  std::vector<std::thread> pool_ ABSL_GUARDED_BY(mutex_);
+  std::deque<std::shared_ptr<Task>> task_queue_ ABSL_GUARDED_BY(mutex_);
   absl::flat_hash_map<Task*, std::shared_ptr<Task>> tasks_not_ready_
-      GUARDED_BY(mutex_);
+      ABSL_GUARDED_BY(mutex_);
 };
 
 }  // namespace common

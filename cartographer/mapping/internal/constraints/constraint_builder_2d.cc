@@ -28,6 +28,7 @@
 #include <utility>
 
 #include "Eigen/Eigenvalues"
+#include "absl/base/thread_annotations.h"
 #include "absl/memory/memory.h"
 #include "cartographer/common/math.h"
 #include "cartographer/common/thread_pool.h"
@@ -100,7 +101,7 @@ void ConstraintBuilder2D::MaybeAddConstraint(
   const auto* scan_matcher =
       DispatchScanMatcherConstruction(submap_id, submap->grid());
   auto constraint_task = absl::make_unique<common::Task>();
-  constraint_task->SetWorkItem([=]() LOCKS_EXCLUDED(mutex_) {
+  constraint_task->SetWorkItem([=]() ABSL_LOCKS_EXCLUDED(mutex_) {
     ComputeConstraint(submap_id, submap, node_id, false, /* match_full_submap */
                       constant_data, initial_relative_pose, *scan_matcher,
                       constraint);
@@ -125,7 +126,7 @@ void ConstraintBuilder2D::MaybeAddGlobalConstraint(
   const auto* scan_matcher =
       DispatchScanMatcherConstruction(submap_id, submap->grid());
   auto constraint_task = absl::make_unique<common::Task>();
-  constraint_task->SetWorkItem([=]() LOCKS_EXCLUDED(mutex_) {
+  constraint_task->SetWorkItem([=]() ABSL_LOCKS_EXCLUDED(mutex_) {
     ComputeConstraint(submap_id, submap, node_id, true, /* match_full_submap */
                       constant_data, transform::Rigid2d::Identity(),
                       *scan_matcher, constraint);

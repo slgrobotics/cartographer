@@ -17,6 +17,7 @@
 #ifndef CARTOGRAPHER_CLOUD_INTERNAL_MAP_BUILDER_SERVER_H
 #define CARTOGRAPHER_CLOUD_INTERNAL_MAP_BUILDER_SERVER_H
 
+#include "absl/base/thread_annotations.h"
 #include "async_grpc/execution_context.h"
 #include "async_grpc/server.h"
 #include "cartographer/cloud/internal/local_trajectory_uploader.h"
@@ -137,10 +138,10 @@ class MapBuilderServer : public MapBuilderServerInterface {
   absl::Mutex subscriptions_lock_;
   int current_subscription_index_ = 0;
   std::map<int /* trajectory ID */, LocalSlamResultHandlerSubscriptions>
-      local_slam_subscriptions_ GUARDED_BY(subscriptions_lock_);
+      local_slam_subscriptions_ ABSL_GUARDED_BY(subscriptions_lock_);
   std::map<int /* subscription_index */,
            MapBuilderContextInterface::GlobalSlamOptimizationCallback>
-      global_slam_subscriptions_ GUARDED_BY(subscriptions_lock_);
+      global_slam_subscriptions_ ABSL_GUARDED_BY(subscriptions_lock_);
   std::unique_ptr<LocalTrajectoryUploaderInterface> local_trajectory_uploader_;
   int starting_submap_index_ = 0;
 };
