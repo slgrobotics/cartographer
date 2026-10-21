@@ -29,7 +29,7 @@ namespace {
 class Receiver {
  public:
   void Receive(int number) {
-    absl::MutexLock locker(&mutex_);
+    absl::MutexLock locker(mutex_);
     received_numbers_.push_back(number);
   }
 
@@ -38,7 +38,7 @@ class Receiver {
         [this, &expected_numbers]() ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
           return (received_numbers_.size() >= expected_numbers.size());
         };
-    absl::MutexLock locker(&mutex_);
+    absl::MutexLock locker(mutex_);
     mutex_.Await(absl::Condition(&predicate));
     EXPECT_EQ(expected_numbers, received_numbers_);
   }

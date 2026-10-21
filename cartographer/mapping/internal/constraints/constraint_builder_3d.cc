@@ -69,7 +69,7 @@ ConstraintBuilder3D::ConstraintBuilder3D(
       ceres_scan_matcher_(options.ceres_scan_matcher_options_3d()) {}
 
 ConstraintBuilder3D::~ConstraintBuilder3D() {
-  absl::MutexLock locker(&mutex_);
+  absl::MutexLock locker(mutex_);
   CHECK_EQ(finish_node_task_->GetState(), common::Task::NEW);
   CHECK_EQ(when_done_task_->GetState(), common::Task::NEW);
   CHECK_EQ(constraints_.size(), 0) << "WhenDone() was not called";
@@ -93,7 +93,7 @@ void ConstraintBuilder3D::MaybeAddConstraint(
     return;
   }
 
-  absl::MutexLock locker(&mutex_);
+  absl::MutexLock locker(mutex_);
   if (when_done_) {
     LOG(WARNING)
         << "MaybeAddConstraint was called while WhenDone was scheduled.";
@@ -119,7 +119,7 @@ void ConstraintBuilder3D::MaybeAddGlobalConstraint(
     const NodeId& node_id, const TrajectoryNode::Data* const constant_data,
     const Eigen::Quaterniond& global_node_rotation,
     const Eigen::Quaterniond& global_submap_rotation) {
-  absl::MutexLock locker(&mutex_);
+  absl::MutexLock locker(mutex_);
   if (when_done_) {
     LOG(WARNING)
         << "MaybeAddGlobalConstraint was called while WhenDone was scheduled.";
@@ -143,10 +143,10 @@ void ConstraintBuilder3D::MaybeAddGlobalConstraint(
 }
 
 void ConstraintBuilder3D::NotifyEndOfNode() {
-  absl::MutexLock locker(&mutex_);
+  absl::MutexLock locker(mutex_);
   CHECK(finish_node_task_ != nullptr);
   finish_node_task_->SetWorkItem([this] {
-    absl::MutexLock locker(&mutex_);
+    absl::MutexLock locker(mutex_);
     ++num_finished_nodes_;
   });
   auto finish_node_task_handle =
@@ -158,7 +158,7 @@ void ConstraintBuilder3D::NotifyEndOfNode() {
 
 void ConstraintBuilder3D::WhenDone(
     const std::function<void(const ConstraintBuilder3D::Result&)>& callback) {
-  absl::MutexLock locker(&mutex_);
+  absl::MutexLock locker(mutex_);
   CHECK(when_done_ == nullptr);
   // TODO(gaschler): Consider using just std::function, it can also be empty.
   when_done_ = absl::make_unique<std::function<void(const Result&)>>(callback);
@@ -254,7 +254,7 @@ void ConstraintBuilder3D::ComputeConstraint(
     }
   }
   {
-    absl::MutexLock locker(&mutex_);
+    absl::MutexLock locker(mutex_);
     score_histogram_.Add(match_result->score);
     rotational_score_histogram_.Add(match_result->rotational_score);
     low_resolution_score_histogram_.Add(match_result->low_resolution_score);
@@ -309,7 +309,7 @@ void ConstraintBuilder3D::RunWhenDoneCallback() {
   Result result;
   std::unique_ptr<std::function<void(const Result&)>> callback;
   {
-    absl::MutexLock locker(&mutex_);
+    absl::MutexLock locker(mutex_);
     CHECK(when_done_ != nullptr);
     for (const std::unique_ptr<Constraint>& constraint : constraints_) {
       if (constraint == nullptr) continue;
@@ -334,12 +334,12 @@ void ConstraintBuilder3D::RunWhenDoneCallback() {
 }
 
 int ConstraintBuilder3D::GetNumFinishedNodes() {
-  absl::MutexLock locker(&mutex_);
+  absl::MutexLock locker(mutex_);
   return num_finished_nodes_;
 }
 
 void ConstraintBuilder3D::DeleteScanMatcher(const SubmapId& submap_id) {
-  absl::MutexLock locker(&mutex_);
+  absl::MutexLock locker(mutex_);
   if (when_done_) {
     LOG(WARNING)
         << "DeleteScanMatcher was called while WhenDone was scheduled.";

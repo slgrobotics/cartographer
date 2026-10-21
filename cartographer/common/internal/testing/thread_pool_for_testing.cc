@@ -38,7 +38,7 @@ ThreadPoolForTesting::ThreadPoolForTesting()
 
 ThreadPoolForTesting::~ThreadPoolForTesting() {
   {
-    absl::MutexLock locker(&mutex_);
+    absl::MutexLock locker(mutex_);
     CHECK(running_);
     running_ = false;
     CHECK_EQ(task_queue_.size(), 0);
@@ -48,7 +48,7 @@ ThreadPoolForTesting::~ThreadPoolForTesting() {
 }
 
 void ThreadPoolForTesting::NotifyDependenciesCompleted(Task* task) {
-  absl::MutexLock locker(&mutex_);
+  absl::MutexLock locker(mutex_);
   CHECK(running_);
   auto it = tasks_not_ready_.find(task);
   CHECK(it != tasks_not_ready_.end());
@@ -59,7 +59,7 @@ void ThreadPoolForTesting::NotifyDependenciesCompleted(Task* task) {
 std::weak_ptr<Task> ThreadPoolForTesting::Schedule(std::unique_ptr<Task> task) {
   std::shared_ptr<Task> shared_task;
   {
-    absl::MutexLock locker(&mutex_);
+    absl::MutexLock locker(mutex_);
     idle_ = false;
     CHECK(running_);
     auto insert_result =
@@ -76,7 +76,7 @@ void ThreadPoolForTesting::WaitUntilIdle() {
                              ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_) { return idle_; };
   for (;;) {
     {
-      absl::MutexLock locker(&mutex_);
+      absl::MutexLock locker(mutex_);
       if (mutex_.AwaitWithTimeout(absl::Condition(&predicate),
                                   absl::FromChrono(common::FromSeconds(0.1)))) {
         return;
@@ -92,7 +92,7 @@ void ThreadPoolForTesting::DoWork() {
   for (;;) {
     std::shared_ptr<Task> task;
     {
-      absl::MutexLock locker(&mutex_);
+      absl::MutexLock locker(mutex_);
       mutex_.AwaitWithTimeout(absl::Condition(&predicate),
                               absl::FromChrono(common::FromSeconds(0.1)));
       if (!task_queue_.empty()) {

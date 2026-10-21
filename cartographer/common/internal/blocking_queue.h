@@ -51,7 +51,7 @@ class BlockingQueue {
     const auto predicate = [this]() ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
       return QueueNotFullCondition();
     };
-    absl::MutexLock lock(&mutex_);
+    absl::MutexLock lock(mutex_);
     mutex_.Await(absl::Condition(&predicate));
     deque_.push_back(std::move(t));
   }
@@ -61,7 +61,7 @@ class BlockingQueue {
     const auto predicate = [this]() ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
       return QueueNotFullCondition();
     };
-    absl::MutexLock lock(&mutex_);
+    absl::MutexLock lock(mutex_);
     if (!mutex_.AwaitWithTimeout(absl::Condition(&predicate),
                                  absl::FromChrono(timeout))) {
       return false;
@@ -75,7 +75,7 @@ class BlockingQueue {
     const auto predicate = [this]() ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
       return !QueueEmptyCondition();
     };
-    absl::MutexLock lock(&mutex_);
+    absl::MutexLock lock(mutex_);
     mutex_.Await(absl::Condition(&predicate));
 
     T t = std::move(deque_.front());
@@ -88,7 +88,7 @@ class BlockingQueue {
     const auto predicate = [this]() ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
       return !QueueEmptyCondition();
     };
-    absl::MutexLock lock(&mutex_);
+    absl::MutexLock lock(mutex_);
     if (!mutex_.AwaitWithTimeout(absl::Condition(&predicate),
                                  absl::FromChrono(timeout))) {
       return nullptr;
@@ -104,7 +104,7 @@ class BlockingQueue {
     const auto predicate = [this]() ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
       return !QueueEmptyCondition();
     };
-    absl::MutexLock lock(&mutex_);
+    absl::MutexLock lock(mutex_);
     if (!mutex_.AwaitWithTimeout(absl::Condition(&predicate),
                                  absl::FromChrono(timeout))) {
       return nullptr;
@@ -117,7 +117,7 @@ class BlockingQueue {
   // a pointer to the given type R.
   template <typename R>
   const R* Peek() {
-    absl::MutexLock lock(&mutex_);
+    absl::MutexLock lock(mutex_);
     if (deque_.empty()) {
       return nullptr;
     }
@@ -126,7 +126,7 @@ class BlockingQueue {
 
   // Returns the number of items currently in the queue.
   size_t Size() {
-    absl::MutexLock lock(&mutex_);
+    absl::MutexLock lock(mutex_);
     return deque_.size();
   }
 
@@ -135,7 +135,7 @@ class BlockingQueue {
     const auto predicate = [this]() ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
       return QueueEmptyCondition();
     };
-    absl::MutexLock lock(&mutex_);
+    absl::MutexLock lock(mutex_);
     mutex_.Await(absl::Condition(&predicate));
   }
 

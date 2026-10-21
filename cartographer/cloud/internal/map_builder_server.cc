@@ -205,7 +205,7 @@ void MapBuilderServer::OnLocalSlamResult(
         ->EnqueueSensorData(std::move(sensor_data));
   }
 
-  absl::MutexLock locker(&subscriptions_lock_);
+  absl::MutexLock locker(subscriptions_lock_);
   for (auto& entry : local_slam_subscriptions_[trajectory_id]) {
     auto copy_of_insertion_result =
         insertion_result
@@ -229,7 +229,7 @@ void MapBuilderServer::OnLocalSlamResult(
 void MapBuilderServer::OnGlobalSlamOptimizations(
     const std::map<int, mapping::SubmapId>& last_optimized_submap_ids,
     const std::map<int, mapping::NodeId>& last_optimized_node_ids) {
-  absl::MutexLock locker(&subscriptions_lock_);
+  absl::MutexLock locker(subscriptions_lock_);
   for (auto& entry : global_slam_subscriptions_) {
     if (!entry.second(last_optimized_submap_ids, last_optimized_node_ids)) {
       LOG(INFO) << "Removing subscription with index: " << entry.first;
@@ -242,7 +242,7 @@ MapBuilderContextInterface::LocalSlamSubscriptionId
 MapBuilderServer::SubscribeLocalSlamResults(
     int trajectory_id,
     MapBuilderContextInterface::LocalSlamSubscriptionCallback callback) {
-  absl::MutexLock locker(&subscriptions_lock_);
+  absl::MutexLock locker(subscriptions_lock_);
   local_slam_subscriptions_[trajectory_id].emplace(current_subscription_index_,
                                                    callback);
   return MapBuilderContextInterface::LocalSlamSubscriptionId{
@@ -252,7 +252,7 @@ MapBuilderServer::SubscribeLocalSlamResults(
 void MapBuilderServer::UnsubscribeLocalSlamResults(
     const MapBuilderContextInterface::LocalSlamSubscriptionId&
         subscription_id) {
-  absl::MutexLock locker(&subscriptions_lock_);
+  absl::MutexLock locker(subscriptions_lock_);
   CHECK_EQ(local_slam_subscriptions_[subscription_id.trajectory_id].erase(
                subscription_id.subscription_index),
            1u);
@@ -260,19 +260,19 @@ void MapBuilderServer::UnsubscribeLocalSlamResults(
 
 int MapBuilderServer::SubscribeGlobalSlamOptimizations(
     MapBuilderContextInterface::GlobalSlamOptimizationCallback callback) {
-  absl::MutexLock locker(&subscriptions_lock_);
+  absl::MutexLock locker(subscriptions_lock_);
   global_slam_subscriptions_.emplace(current_subscription_index_, callback);
   return current_subscription_index_++;
 }
 
 void MapBuilderServer::UnsubscribeGlobalSlamOptimizations(
     int subscription_index) {
-  absl::MutexLock locker(&subscriptions_lock_);
+  absl::MutexLock locker(subscriptions_lock_);
   CHECK_EQ(global_slam_subscriptions_.erase(subscription_index), 1u);
 }
 
 void MapBuilderServer::NotifyFinishTrajectory(int trajectory_id) {
-  absl::MutexLock locker(&subscriptions_lock_);
+  absl::MutexLock locker(subscriptions_lock_);
   for (auto& entry : local_slam_subscriptions_[trajectory_id]) {
     MapBuilderContextInterface::LocalSlamSubscriptionCallback callback =
         entry.second;
