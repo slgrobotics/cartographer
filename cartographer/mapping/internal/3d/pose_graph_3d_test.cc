@@ -88,6 +88,18 @@ class PoseGraph3DTest : public ::testing::Test {
   std::unique_ptr<PoseGraph3DForTesting> pose_graph_;
 };
 
+TEST_F(PoseGraph3DTest, AbsoluteInitialPoseNeedsNoReferenceTrajectory) {
+  BuildPoseGraph();
+  const transform::Rigid3d initial(
+      Eigen::Vector3d(2., -3., 1.),
+      Eigen::Quaterniond(Eigen::AngleAxisd(1.2, Eigen::Vector3d::UnitZ())));
+  pose_graph_->SetInitialTrajectoryPoseInMap(0, initial);
+  const auto actual = pose_graph_->GetLocalToGlobalTransform(0);
+  EXPECT_LT((actual.translation() - initial.translation()).norm(), 1e-8);
+  EXPECT_LT(actual.rotation().angularDistance(initial.rotation()), 1e-8);
+  EXPECT_TRUE(pose_graph_->GetConnectedTrajectories().empty());
+}
+
 TEST_F(PoseGraph3DTest, Empty) {
   BuildPoseGraph();
   pose_graph_->WaitForAllComputations();

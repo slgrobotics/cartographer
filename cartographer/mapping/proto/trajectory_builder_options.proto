@@ -32,6 +32,10 @@ message TrajectoryBuilderOptions {
   LocalTrajectoryBuilderOptions3D trajectory_builder_3d_options = 2;
   InitialTrajectoryPose initial_trajectory_pose = 4;
 
+  // Absolute local-to-map transform before the first submap is created.
+  // Mutually exclusive with initial_trajectory_pose; no reference trajectory.
+  transform.proto.Rigid3d initial_map_pose = 10;
+
   reserved 5;
 
   bool pure_localization = 3 [deprecated = true];

@@ -71,7 +71,9 @@ std::vector<SubmapId> PoseGraph3D::InitializeGlobalSubmapPoses(
   if (insertion_submaps.size() == 1) {
     // If we don't already have an entry for the first submap, add one.
     if (submap_data.SizeOfTrajectoryOrZero(trajectory_id) == 0) {
-      if (data_.initial_trajectory_poses.count(trajectory_id) > 0) {
+      if (data_.initial_trajectory_poses.count(trajectory_id) > 0 &&
+          data_.initial_trajectory_poses.at(trajectory_id).to_trajectory_id !=
+              kMapFrameTrajectoryId) {
         data_.trajectory_connectivity_state.Connect(
             trajectory_id,
             data_.initial_trajectory_poses.at(trajectory_id).to_trajectory_id,
@@ -1029,6 +1031,12 @@ void PoseGraph3D::SetInitialTrajectoryPose(const int from_trajectory_id,
                                            const transform::Rigid3d& pose,
                                            const common::Time time) {
   absl::MutexLock locker(mutex_);
+  if (to_trajectory_id == kMapFrameTrajectoryId) {
+    CHECK(pose.IsValid());
+    CHECK_EQ(data_.trajectory_nodes.SizeOfTrajectoryOrZero(from_trajectory_id), 0)
+        << "An absolute initial pose must be set before adding any nodes.";
+    CHECK_EQ(data_.submap_data.SizeOfTrajectoryOrZero(from_trajectory_id), 0);
+  }
   data_.initial_trajectory_poses[from_trajectory_id] =
       InitialTrajectoryPose{to_trajectory_id, pose, time};
 }
@@ -1100,6 +1108,9 @@ transform::Rigid3d PoseGraph3D::ComputeLocalToGlobalTransform(
   if (begin_it == end_it) {
     const auto it = data_.initial_trajectory_poses.find(trajectory_id);
     if (it != data_.initial_trajectory_poses.end()) {
+      if (it->second.to_trajectory_id == kMapFrameTrajectoryId) {
+        return it->second.relative_pose;
+      }
       return GetInterpolatedGlobalTrajectoryPose(it->second.to_trajectory_id,
                                                  it->second.time) *
              it->second.relative_pose;

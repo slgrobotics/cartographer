@@ -214,6 +214,22 @@ class PoseGraph2DTest : public ::testing::Test {
   transform::Rigid2d current_pose_;
 };
 
+TEST_F(PoseGraph2DTest, AbsoluteInitialPoseAppliesToFirstSubmap) {
+  const auto initial = transform::Embed3D(
+      transform::Rigid2d(Eigen::Vector2d(2., -3.), 1.2));
+  pose_graph_->SetInitialTrajectoryPoseInMap(0, initial);
+  EXPECT_THAT(pose_graph_->GetLocalToGlobalTransform(0),
+              transform::IsNearly(initial, 1e-8));
+  MoveRelative(transform::Rigid2d::Identity());
+  pose_graph_->RunFinalOptimization();
+  const auto submap = pose_graph_->GetSubmapData(SubmapId{0, 0});
+  ASSERT_NE(submap.submap, nullptr);
+  EXPECT_THAT(submap.pose * submap.submap->local_pose().inverse(),
+              transform::IsNearly(initial, 1e-6));
+  EXPECT_THAT(pose_graph_->GetTrajectoryNodes().at(NodeId{0, 0}).global_pose,
+              transform::IsNearly(initial, 1e-6));
+}
+
 TEST_F(PoseGraph2DTest, EmptyMap) {
   pose_graph_->RunFinalOptimization();
   const auto nodes = pose_graph_->GetTrajectoryNodes();

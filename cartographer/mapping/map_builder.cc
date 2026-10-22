@@ -146,6 +146,14 @@ int MapBuilder::AddTrajectoryBuilder(
   MaybeAddPureLocalizationTrimmer(trajectory_id, trajectory_options,
                                   pose_graph_.get());
 
+  CHECK(!(trajectory_options.has_initial_map_pose() &&
+          trajectory_options.has_initial_trajectory_pose()))
+      << "Absolute and relative initial poses are mutually exclusive.";
+  if (trajectory_options.has_initial_map_pose()) {
+    const auto pose = transform::ToRigid3(trajectory_options.initial_map_pose());
+    CHECK(pose.IsValid());
+    pose_graph_->SetInitialTrajectoryPoseInMap(trajectory_id, pose);
+  }
   if (trajectory_options.has_initial_trajectory_pose()) {
     const auto& initial_trajectory_pose =
         trajectory_options.initial_trajectory_pose();

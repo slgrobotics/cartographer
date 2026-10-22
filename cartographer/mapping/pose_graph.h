@@ -128,6 +128,15 @@ class PoseGraph : public PoseGraphInterface {
   virtual std::map<std::string /* landmark ID */, PoseGraph::LandmarkNode>
   GetLandmarkNodes() const = 0;
 
+  // Initializes an absolute local-to-map transform, before adding any nodes.
+  // The map frame is represented internally by a reserved non-trajectory ID.
+  static constexpr int kMapFrameTrajectoryId = -1;
+  void SetInitialTrajectoryPoseInMap(int trajectory_id,
+                                   const transform::Rigid3d& pose) {
+    SetInitialTrajectoryPose(trajectory_id, kMapFrameTrajectoryId, pose,
+                             common::Time());
+  }
+
   // Sets a relative initial pose 'relative_pose' for 'from_trajectory_id' with
   // respect to 'to_trajectory_id' at time 'time'.
   virtual void SetInitialTrajectoryPose(int from_trajectory_id,
