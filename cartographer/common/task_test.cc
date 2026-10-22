@@ -159,6 +159,34 @@ TEST_F(TaskTest, RunTaskWithTwoDependency) {
   EXPECT_EQ(shared_d->GetState(), Task::COMPLETED);
 }
 
+// Dependency notifications may call back into the completed task via the pool.
+// This must happen after releasing the completed task's mutex.
+TEST(TaskNotificationTest, CompletionReleasesDependencyMutexBeforeNotification) {
+  class InspectingThreadPool : public FakeThreadPool {
+   public:
+    std::shared_ptr<Task> dependency;
+
+    void NotifyDependenciesCompleted(Task* task) override {
+      if (dependency) {
+        EXPECT_EQ(dependency->GetState(), Task::COMPLETED);
+      }
+      FakeThreadPool::NotifyDependenciesCompleted(task);
+    }
+  } pool;
+
+  auto dependency = absl::make_unique<Task>();
+  auto dependent = absl::make_unique<Task>();
+  pool.dependency = pool.Schedule(std::move(dependency)).lock();
+  ASSERT_NE(pool.dependency, nullptr);
+  dependent->AddDependency(pool.dependency);
+  auto shared_dependent = pool.Schedule(std::move(dependent)).lock();
+  ASSERT_NE(shared_dependent, nullptr);
+  pool.RunNext();
+  EXPECT_EQ(shared_dependent->GetState(), Task::DEPENDENCIES_COMPLETED);
+  pool.RunNext();
+  EXPECT_EQ(shared_dependent->GetState(), Task::COMPLETED);
+}
+
 TEST_F(TaskTest, RunWithCompletedDependency) {
   auto a = absl::make_unique<Task>();
   MockCallback callback_a;
