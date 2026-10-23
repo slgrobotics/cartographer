@@ -17,6 +17,7 @@ See:
 * https://github.com/slgrobotics/cartographer_ros/blob/lyrical/README_Lyrical.md
 * https://github.com/slgrobotics/articubot_one/wiki/Jazzy-to-Lyrical-migration#cartographer-port
 * https://github.com/slgrobotics/cartographer_ros
+* Read this fork's documentation on `GitHub Pages`_
 
 ============
 Cartographer
@@ -39,15 +40,14 @@ configurations.
 Getting started
 ===============
 
-* Read this fork's documentation on `GitHub Pages`_ (after enabling Pages).
-* See `documentation publishing setup`_ for the one-time GitHub configuration.
-* Learn to use Cartographer at `our Read the Docs site`_.
-* You can ask a question by `creating an issue`_.
+* Learn to use Cartographer - read this fork's documentation on `GitHub Pages`_.
+* Original Cartographer documentation at `original Read the Docs site`_.
+* You can ask a question by `creating an issue`_ at the original repo or by `creating an issue here`_.
 
 .. _GitHub Pages: https://slgrobotics.github.io/cartographer/
-.. _documentation publishing setup: docs/README.md
-.. _our Read the Docs site: https://google-cartographer.readthedocs.io
+.. _original Read the Docs site: https://google-cartographer.readthedocs.io
 .. _creating an issue: https://github.com/cartographer-project/cartographer_ros/issues/new?labels=question
+.. _creating an issue here: https://github.com/slgrobotics/cartographer_ros/issues/new?labels=question
 
 Contributing
 ============
